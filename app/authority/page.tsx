@@ -19,6 +19,30 @@ type Incident = {
 
 export default function AuthorityPage() {
     const router = useRouter();
+    useEffect(() => {
+  async function checkAuthorityAccess() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.replace("/auth");
+      return;
+    }
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (error || profile?.role !== "authority") {
+      router.replace("/dashboard");
+    }
+  }
+
+  checkAuthorityAccess();
+}, [router]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIncident, setSelectedIncident] =
@@ -475,41 +499,85 @@ async function calculateRisk(incident: Incident) {
     Back
   </button>
 </div>
-          <p className="text-sm font-medium text-cyan-400">
-            SENTINELX COMMAND CENTER
-          </p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+  <div>
+    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-400">
+      SENTINELX • COMMAND CENTER
+    </p>
 
-          <h1 className="mt-2 text-4xl font-bold">
-            Authority Dashboard
-          </h1>
+    <h1 className="mt-2 text-4xl font-bold tracking-tight">
+      Authority Operations
+    </h1>
 
-          <p className="mt-3 max-w-2xl text-slate-400">
-            Monitor community incidents, identify high-risk situations,
-            and coordinate emergency response.
-          </p>
+    <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+      Monitor incidents, assess emerging risks, review AI intelligence,
+      and coordinate community emergency response from one operational view.
+    </p>
+  </div>
+
+  <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3">
+    <div className="flex items-center gap-2 text-sm font-semibold text-emerald-300">
+      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+      Authority access verified
+    </div>
+    <p className="mt-1 text-xs text-slate-500">
+      Secure command environment
+    </p>
+  </div>
+</div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <p className="text-sm text-slate-400">Total Incidents</p>
-            <p className="mt-2 text-3xl font-bold">{incidents.length}</p>
-          </div>
+        
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+    <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+      Total Incidents
+    </p>
+    <p className="mt-3 text-3xl font-bold text-white">
+      {incidents.length}
+    </p>
+    <p className="mt-1 text-xs text-slate-500">
+      All reported incidents
+    </p>
+  </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <p className="text-sm text-slate-400">Active Incidents</p>
-            <p className="mt-2 text-3xl font-bold">{activeCount}</p>
-          </div>
+  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5">
+    <p className="text-xs font-medium uppercase tracking-wider text-cyan-300">
+      Active Incidents
+    </p>
+    <p className="mt-3 text-3xl font-bold text-white">
+      {activeCount}
+    </p>
+    <p className="mt-1 text-xs text-slate-500">
+      Require operational attention
+    </p>
+  </div>
 
-          <div className="rounded-2xl border border-orange-400/20 bg-orange-400/5 p-6">
-            <p className="text-sm text-orange-300">High Risk</p>
-            <p className="mt-2 text-3xl font-bold">{highCount}</p>
-          </div>
+  <div className="rounded-2xl border border-orange-400/20 bg-orange-400/5 p-5">
+    <p className="text-xs font-medium uppercase tracking-wider text-orange-300">
+      High Risk
+    </p>
+    <p className="mt-3 text-3xl font-bold text-white">
+      {highCount}
+    </p>
+    <p className="mt-1 text-xs text-slate-500">
+      High-severity situations
+    </p>
+  </div>
 
-          <div className="rounded-2xl border border-red-400/20 bg-red-400/5 p-6">
-            <p className="text-sm text-red-300">Critical</p>
-            <p className="mt-2 text-3xl font-bold">{criticalCount}</p>
-          </div>
-        </div>
+  <div className="rounded-2xl border border-red-400/20 bg-red-400/5 p-5">
+    <p className="text-xs font-medium uppercase tracking-wider text-red-300">
+      Critical
+    </p>
+    <p className="mt-3 text-3xl font-bold text-white">
+      {criticalCount}
+    </p>
+    <p className="mt-1 text-xs text-slate-500">
+      Immediate attention required
+    </p>
+  </div>
+</div>
+        
 
         <section className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6">
           <div className="mb-6">

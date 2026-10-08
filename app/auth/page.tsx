@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 export default function AuthPage() {
   const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isAuthorityLogin, setIsAuthorityLogin] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -36,19 +37,52 @@ export default function AuthPage() {
           "Account created. Please check your email to confirm your account."
         );
       }
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+   } else {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-      if (error) {
-        setMessage(error.message);
-      } else {
-        setMessage("Login successful.");
-        router.push("/dashboard");
-      }
+  if (error) {
+    setMessage(error.message);
+    setLoading(false);
+    return;
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", data.user.id)
+    .single();
+    console.log("Profile check:", { profile, profileError });
+
+  if (profileError || !profile) {
+    await supabase.auth.signOut();
+    setMessage("Unable to verify your account role.");
+    setLoading(false);
+    return;
+  }
+
+  if (isAuthorityLogin) {
+    if (profile.role !== "authority") {
+      await supabase.auth.signOut();
+      setMessage("Authority access required.");
+      setLoading(false);
+      return;
     }
+
+    router.push("/authority");
+  } else {
+    if (profile.role !== "citizen") {
+      await supabase.auth.signOut();
+      setMessage("Please use the Authority Sign In for this account.");
+      setLoading(false);
+      return;
+    }
+
+    router.push("/dashboard");
+  }
+}
 
     setLoading(false);
   }
@@ -70,13 +104,19 @@ export default function AuthPage() {
 
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl">
           <h2 className="text-2xl font-semibold">
-            {isSignUp ? "Create your account" : "Welcome back"}
+           {isSignUp
+  ? "Create your account"
+  : isAuthorityLogin
+    ? "Authority Access"
+    : "Welcome back"}
           </h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            {isSignUp
-              ? "Create your SentinelX citizen account."
-              : "Sign in to access SentinelX."}
+           {isSignUp
+  ? "Create your SentinelX citizen account."
+  : isAuthorityLogin
+    ? "Sign in to access the SentinelX Command Center."
+    : "Sign in to access SentinelX."}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
@@ -133,11 +173,13 @@ export default function AuthPage() {
               disabled={loading}
               className="w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading
-                ? "Please wait..."
-                : isSignUp
-                  ? "Create account"
-                  : "Sign in"}
+             {loading
+  ? "Please wait..."
+  : isSignUp
+    ? "Create account"
+    : isAuthorityLogin
+      ? "Authority Sign In"
+      : "Sign in"}
             </button>
           </form>
 
@@ -160,6 +202,19 @@ export default function AuthPage() {
             >
               {isSignUp ? "Sign in" : "Create account"}
             </button>
+            <div className="mt-4 text-center">
+  <button
+    type="button"
+    onClick={() => {
+      setIsAuthorityLogin(!isAuthorityLogin);
+      setIsSignUp(false);
+      setMessage("");
+    }}
+    className="font-medium text-amber-300 hover:text-amber-200"
+  >
+    {isAuthorityLogin ? "Back to Citizen Sign In" : "Authority Sign In"}
+  </button>
+</div>
           </div>
         </div>
       </div>

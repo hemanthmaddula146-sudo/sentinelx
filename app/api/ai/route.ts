@@ -43,23 +43,17 @@ async function callGemini(
   const responseText = await response.text();
 
   if (!response.ok) {
-    throw new Error(
-      `GEMINI_${response.status}:${responseText}`
-    );
+    throw new Error(`GEMINI_${response.status}:${responseText}`);
   }
 
   const data = JSON.parse(responseText);
 
-  const reply =
+  return (
     data.candidates?.[0]?.content?.parts
-      ?.map(
-        (part: { text?: string }) =>
-          part.text ?? ""
-      )
+      ?.map((part: { text?: string }) => part.text ?? "")
       .join("")
-      .trim() || "No response generated.";
-
-  return reply;
+      .trim() || "No response generated."
+  );
 }
 
 export async function POST(request: Request) {
@@ -67,14 +61,10 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     const message =
-      typeof body.message === "string"
-        ? body.message.trim()
-        : "";
+      typeof body.message === "string" ? body.message.trim() : "";
 
     const accessToken =
-      typeof body.accessToken === "string"
-        ? body.accessToken
-        : "";
+      typeof body.accessToken === "string" ? body.accessToken : "";
 
     if (!message) {
       return NextResponse.json(
@@ -83,68 +73,73 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        {
-          error:
-            "GEMINI_API_KEY is not configured.",
-        },
-        { status: 500 }
-      );
-    }
-
     if (!accessToken) {
       return NextResponse.json(
-        {
-          error:
-            "Authentication token is required.",
-        },
+        { error: "Authentication token is required." },
         { status: 401 }
       );
     }
 
-    const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL;
+    // ---------------------------------------------------------
+    // ENVIRONMENT VARIABLES
+    // ---------------------------------------------------------
 
-    const supabaseKey =
+    const apiKey = process.env.GEMINI_API_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey =
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    const serviceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY is not configured." },
+        { status: 500 }
+      );
+    }
+
+    if (!supabaseUrl || !publishableKey) {
+      return NextResponse.json(
+        { error: "Supabase configuration is missing." },
+        { status: 500 }
+      );
+    }
+
+    if (!serviceRoleKey) {
       return NextResponse.json(
         {
           error:
-            "Supabase configuration is missing.",
+            "Server Supabase configuration is incomplete. Please configure the service role key.",
         },
         { status: 500 }
       );
     }
 
     // ---------------------------------------------------------
-    // AUTHENTICATED SUPABASE CLIENT
+    // AUTHENTICATED CLIENT
+    // Used ONLY to verify the supplied user session.
     // ---------------------------------------------------------
 
-    const supabase = createClient(
+    const authSupabase = createClient(
       supabaseUrl,
-      supabaseKey,
+      publishableKey,
       {
         global: {
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
         },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
       }
     );
-
-    // ---------------------------------------------------------
-    // VERIFY USER
-    // ---------------------------------------------------------
 
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await authSupabase.auth.getUser();
 
     if (userError || !user) {
       return NextResponse.json(
@@ -157,22 +152,83 @@ export async function POST(request: Request) {
     }
 
     // ---------------------------------------------------------
-    // LOAD USER INCIDENTS
+    // SERVER-ONLY ADMIN CLIENT
+    //
+    // IMPORTANT:
+    // This key must NEVER be exposed to browser/client code.
+    // ---------------------------------------------------------
+
+    const adminSupabase = createClient(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
+
+    // ---------------------------------------------------------
+    // VERIFY USER ROLE
     // ---------------------------------------------------------
 
     const {
-      data: incidents,
-      error: incidentsError,
-    } = await supabase
+      data: profile,
+      error: profileError,
+    } = await adminSupabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profile) {
+      console.error(
+        "Profile verification error:",
+        profileError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to verify your SentinelX account.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const isAuthority =
+      profile.role === "authority";
+
+    // ---------------------------------------------------------
+    // LOAD INCIDENT DATA
+    //
+    // Authority: community incidents
+    // Citizen: only their own incidents
+    // ---------------------------------------------------------
+
+    let incidentQuery = adminSupabase
       .from("incidents")
       .select(
-        "id, incident_type, title, description, severity, status, latitude, longitude, created_at"
+        "id, reporter_id, incident_type, title, description, severity, status, latitude, longitude, created_at"
       )
-      .eq("reporter_id", user.id)
       .order("created_at", {
         ascending: false,
       })
       .limit(20);
+
+    if (!isAuthority) {
+      incidentQuery =
+        incidentQuery.eq(
+          "reporter_id",
+          user.id
+        );
+    }
+
+    const {
+      data: incidents,
+      error: incidentsError,
+    } = await incidentQuery;
 
     if (incidentsError) {
       console.error(
@@ -190,19 +246,17 @@ export async function POST(request: Request) {
     }
 
     const incidentContext =
-      (incidents ?? []).map(
-        (incident) => ({
-          id: incident.id,
-          type: incident.incident_type,
-          title: incident.title,
-          description: incident.description,
-          severity: incident.severity,
-          status: incident.status,
-          latitude: incident.latitude,
-          longitude: incident.longitude,
-          reported_at: incident.created_at,
-        })
-      );
+      (incidents ?? []).map((incident) => ({
+        id: incident.id,
+        type: incident.incident_type,
+        title: incident.title,
+        description: incident.description,
+        severity: incident.severity,
+        status: incident.status,
+        latitude: incident.latitude,
+        longitude: incident.longitude,
+        reported_at: incident.created_at,
+      }));
 
     // ---------------------------------------------------------
     // COMPUTER VISION
@@ -222,30 +276,21 @@ export async function POST(request: Request) {
       try {
         let imageUrl = imageReference;
 
-        // Private Supabase Storage path
+        // If imageReference is a private Storage path,
+        // create the signed URL server-side.
         if (
-          !imageReference.startsWith(
-            "http://"
-          ) &&
-          !imageReference.startsWith(
-            "https://"
-          )
+          !imageReference.startsWith("http://") &&
+          !imageReference.startsWith("https://")
         ) {
           const cleanPath =
-            imageReference.replace(
-              /^\/+/,
-              ""
-            );
+            imageReference.replace(/^\/+/, "");
 
           const {
             data: signedUrlData,
             error: signedUrlError,
-          } = await supabase.storage
+          } = await adminSupabase.storage
             .from("incident-images")
-            .createSignedUrl(
-              cleanPath,
-              300
-            );
+            .createSignedUrl(cleanPath, 300);
 
           if (
             signedUrlError ||
@@ -269,7 +314,10 @@ export async function POST(request: Request) {
             signedUrlData.signedUrl;
         }
 
-        // Download image
+        // -----------------------------------------------------
+        // DOWNLOAD IMAGE
+        // -----------------------------------------------------
+
         const imageResponse =
           await fetch(imageUrl);
 
@@ -413,19 +461,17 @@ ${message}
       },
     ];
 
-    // Attach actual image bytes
     if (imageBase64) {
       parts.push({
         inlineData: {
-          mimeType:
-            imageMimeType,
+          mimeType: imageMimeType,
           data: imageBase64,
         },
       });
     }
 
     // ---------------------------------------------------------
-    // PRIMARY MODEL
+    // PRIMARY GEMINI MODEL
     // ---------------------------------------------------------
 
     try {
@@ -451,24 +497,12 @@ ${message}
         errorMessage
       );
 
-      // Only use fallback for temporary
-      // availability/rate-limit errors.
       const temporaryFailure =
-        errorMessage.includes(
-          "GEMINI_429"
-        ) ||
-        errorMessage.includes(
-          "GEMINI_500"
-        ) ||
-        errorMessage.includes(
-          "GEMINI_502"
-        ) ||
-        errorMessage.includes(
-          "GEMINI_503"
-        ) ||
-        errorMessage.includes(
-          "GEMINI_504"
-        );
+        errorMessage.includes("GEMINI_429") ||
+        errorMessage.includes("GEMINI_500") ||
+        errorMessage.includes("GEMINI_502") ||
+        errorMessage.includes("GEMINI_503") ||
+        errorMessage.includes("GEMINI_504");
 
       if (!temporaryFailure) {
         return NextResponse.json(
@@ -482,7 +516,7 @@ ${message}
     }
 
     // ---------------------------------------------------------
-    // FALLBACK MODEL
+    // FALLBACK GEMINI MODEL
     // ---------------------------------------------------------
 
     try {
