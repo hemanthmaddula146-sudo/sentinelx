@@ -1,3 +1,54 @@
+# 🛡️ SentinelX
+### AI-Powered Real-Time Community Safety Platform
+
+SentinelX is an AI-powered community safety and disaster intelligence
+platform designed to support incident reporting, geospatial monitoring,
+IoT telemetry, risk assessment, AI analysis, and emergency response.
+
+## 🌐 Live Demo
+
+**[🚀 Visit SentinelX Live Website](https://sentinelx-2.vercel.app)**
+
+## ✨ Features
+
+- 📍 Citizen incident reporting
+- 🗺️ Geospatial location support
+- 🤖 AI-powered incident analysis
+- 🖼️ AI-based image analysis
+- ⚠️ Risk assessment
+- 🔔 Alert infrastructure
+- 👥 Separate Citizen and Authority access
+- 🔐 Authentication and database security
+
+## 🛠️ Technology Stack
+
+- Next.js
+- TypeScript
+- Tailwind CSS
+- Supabase
+- PostgreSQL
+- PostGIS
+- Google Gemini AI
+- Vercel
+
+## 🧪 Try the Project
+
+1. Open the live demo.
+2. Explore the landing page.
+3. Sign in using an authorized test account.
+4. Submit a sample incident.
+5. Test AI analysis and other available features.
+
+Use test data only. Do not submit real emergency reports.
+
+## 💻 Run Locally
+
+Clone the repository:
+
+```bash
+git clone https://github.com/hemanthmaddula146-sudo/sentlex.git
+cd sentlex
+npm install
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
